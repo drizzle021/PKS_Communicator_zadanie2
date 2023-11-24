@@ -9,7 +9,7 @@ class Client:
         self.fragmentSize = 512
         self.connected = False
         self.data = None
-        """t1 = threading.Thread(target=self.listen)
+        """t1 = threading.Thread(target=self.listen,daemon=True)
         t1.start()
         while not connected:
             self.sendMessage("init")

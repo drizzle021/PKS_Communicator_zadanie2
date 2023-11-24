@@ -11,8 +11,9 @@ from tkinter.messagebox import showerror
 from tkinter import filedialog as fd
 import re
 
+
 class GUI(tk.Tk):
-    def __init__(self, ip, port):
+    def __init__(self, ip, port,mode=""):
         super().__init__()
 
         self.ip = ip
@@ -40,9 +41,14 @@ class GUI(tk.Tk):
         self.inputField = ttk.Entry(self.inputControl,width=30 ,font=tkinter.font.Font(family="Arial",size=13))
         self.inputField.grid(row=3,column=0,columnspan=3,padx=5)
 
+
         self.sendButtonIcon = tk.PhotoImage(file="img/send-01.png")
         self.sendButton = tk.Button(self.inputControl, image=self.sendButtonIcon, borderwidth=0, command=self.sendMessage)
         self.sendButton.grid(row=3,column=3)
+
+        #self.switchButtonIcon = tk.PhotoImage(file="")
+        self.switchButton = tk.Button(self.inputControl,borderwidth=0,command=self.requestSwitch,text="switch")
+        self.switchButton.grid(row=4,column=3)
 
         self.addFileButtonIcon = tk.PhotoImage(file="img/file-01.png")
         self.addFileButton = tk.Button(self.inputControl, image=self.addFileButtonIcon, borderwidth=0, command=self.openFile)
@@ -59,7 +65,8 @@ class GUI(tk.Tk):
         self.config(menu=self.menuBar)
 
         self.fileOptionMenu = tk.Menu(self.menuBar, tearoff=False)
-        self.fileOptionMenu.add_command(label="Open", command=self.openFile)
+        if mode != 0:
+            self.fileOptionMenu.add_command(label="Open", command=self.openFile)
         self.fileOptionMenu.add_command(label="Exit", command=self.stop)
         self.viewOptionMenu = tk.Menu(self.menuBar, tearoff=False)
         self.viewOptionMenu.add_command(label="Increase Font Size", command=self.increaseFontSize)
@@ -73,6 +80,12 @@ class GUI(tk.Tk):
         self.menuBar.add_cascade(label="Help", menu=self.helpOptionMenu)
 
         self.bind("<Return>",self.sendMessage)
+
+        if mode == 0:
+            self.inputField.config(state="disabled")
+            self.sendButton.config(state="disabled")
+            self.addFileButton.config(state="disabled")
+            self.makeMistakeCheckBox.config(state="disabled")
 
 
     def sendMessage(self, *args):
@@ -114,6 +127,9 @@ class GUI(tk.Tk):
         if self.font.cget("size") == 11:
             return
         self.font.config(size=self.font.cget("size") - 1)
+
+    def requestSwitch(self):
+        print("switch")
 
     def start(self):
         self.mainloop()
@@ -172,14 +188,18 @@ class Login(tk.Tk):
             showerror(title='Error', message=f"Wrong IP address format")
             return -1
 
+        if self.selected.get() == "":
+            showerror(title='Error',message=f"Client/Server mode not selected")
+            return -1
+
         global ip,port,mode
         ip = ipIN
-        port = portIN
+        port = int(portIN)
         mode = int(self.selected.get())
         self.destroy()
 
-def start(ip, port):
-    gui = GUI(ip,port)
+def start(ip, port,mode):
+    gui = GUI(ip,port,mode)
     gui.start()
 
 
@@ -194,5 +214,6 @@ if mode == 1:
 elif mode == 0:
     user = Server(ip,port)
 
-t2 = threading.Thread(target=lambda: start(ip,port))
+t2 = threading.Thread(target=lambda: start(ip,port,mode))
 t2.start()
+
