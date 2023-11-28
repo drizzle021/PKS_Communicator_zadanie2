@@ -6,13 +6,14 @@ from Client import Client
 
 import tkinter.ttk as ttk
 import tkinter as tk
+import sys
 from webbrowser import open as wbopen
 from tkinter.messagebox import showerror
 from tkinter import filedialog as fd
 import re
 
 
-class GUI(tk.Tk):
+"""class GUI(tk.Tk):
     def __init__(self, ip, port,mode=""):
         super().__init__()
 
@@ -216,4 +217,32 @@ elif mode == 0:
 
 t2 = threading.Thread(target=lambda: start(ip,port,mode))
 t2.start()
+"""
+print("PKS - COMMUNICATOR")
+mode = ""
+user = None
+LOCALHOST = True
+while mode != "0" and mode != "1":
+    print("Choose a mode (0 - Sender , 1 - Receiver)")
+    print("To QUIT enter '-1'")
+    mode = input(": ")
+    if mode == "0":
+
+        user = Client(("localhost", 9000) if LOCALHOST else (input("IP: "), input("PORT: ")))
+
+    elif mode == "1":
+
+        user = Server("localhost" if LOCALHOST else input(), 9000 if LOCALHOST else input())
+
+    elif mode == "-1":
+        print("Exiting...")
+        sys.exit(0)
+
+while True:
+    status = user.start()
+    if status == 45 and mode == "0":
+        user = Server("localhost" if LOCALHOST else input(), 9000 if LOCALHOST else input())
+
+    elif status == 45 and mode == "1":
+        user = Client(("localhost", 9000) if LOCALHOST else (input("IP: "), input("PORT: ")))
 
