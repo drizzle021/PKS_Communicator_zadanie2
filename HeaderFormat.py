@@ -1,5 +1,6 @@
 from enum import Enum
 
+
 class Flag(Enum):
     CONNECT = 1
     FILE = 2
@@ -11,18 +12,25 @@ class Flag(Enum):
     _ = 0
 
 
-def formatHeader(flag, fragment_seq, data, filename=""):
+def formatHeader(flag, fragment_seq=0, data="", filename=""):
     if flag == Flag.CONNECT.value:
-        return bytes(flag)
+        return flag.to_bytes(1)
+
     elif flag == Flag.FILE.value:
-        return f"{flag}{fragment_seq}{filename}00{data}"
+        return flag.to_bytes(1) + bytes(fragment_seq.to_bytes(2)) + bytes(filename, "utf-8") + (0).to_bytes(1) + data
+
     elif flag == Flag.MESSAGE.value:
-        return bytes(flag)+bytes(fragment_seq)+bytes(data, "utf-8")
+        # print((bytes(flag.to_bytes(1))+bytes(fragment_seq.to_bytes(2))+bytes(data, "utf-8")).hex(" ").split(" "))
+        return flag.to_bytes(1) + bytes(fragment_seq.to_bytes(2)) + bytes(data, "utf-8")
+
     elif flag == Flag.K_ALIVE.value:
         return f"{flag}"
+
     elif flag == Flag.NACK.value:
         return f"{flag}{fragment_seq}"
+
     elif flag == Flag.ACK.value:
         return f"{flag}{fragment_seq}"
+
     elif flag == Flag.SWITCH.value:
-        return f"{flag}"
+        return flag.to_bytes(1)

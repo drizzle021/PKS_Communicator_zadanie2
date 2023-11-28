@@ -24,18 +24,23 @@ class Server:
             try:
                 self.data, address = self.socket.recvfrom(65000)
 
-                parts = self.data.hex(" ")
+                parts = self.data.hex(" ").split()
 
-                if self.data.hex(" ").split(" ")[0] == "66":
-                    self.receiveFile(self.data.hex(" ").split(" ")[1:])
+                """if self.data.hex(" ").split(" ")[0] == "66":
+                    self.receiveFile(self.data.hex(" ").split(" ")[1:])"""
+                print(parts)
 
-                elif self.data.decode() == "switch":
+                if parts[0] == Flag.MESSAGE.value.to_bytes(1).hex():
+                    print(bytes.fromhex(" ".join(parts[3:])).decode())
+
+                elif parts[0] == Flag.SWITCH.value.to_bytes(1).hex():
                     self.switch()
+
+                elif parts[0] == Flag.FILE.value.to_bytes(1).hex():
+                    self.receiveFile(parts[3:])
 
                 if self.data.decode() != "alive" or "alive" not in self.messageQueue:
                     self.messageQueue.append(self.data.decode())
-                if parts[0] == bytes(Flag.MESSAGE.value).hex(" "):
-                    print(self.data.decode())
             except Exception as e:
                 print(e)
                 print("error")
@@ -44,8 +49,14 @@ class Server:
         self.socket.sendto(message.encode(), self.client)
 
     def receiveFile(self, file):
+        separatorIndex = file.index("00")
+        filename = file[:separatorIndex]
+        filename = bytes.fromhex(" ".join(filename))
+        print(filename)
+        filename = filename.decode()
+        file = file[separatorIndex+1:]
         file = bytes.fromhex(" ".join(file))
-        filename = "test.jpg"
+
         with open(f"{filename}", mode="wb") as f:
             f.write(file)
 
@@ -54,7 +65,7 @@ class Server:
     def checkAlive(self):
         timeout = 15
         while self.connected:
-            #print(self.messageQueue)
+            # print(self.messageQueue)
             if "alive" in self.messageQueue:
                 self.messageQueue = [message for message in self.messageQueue if message != "alive"]
                 self.sendMessage("ack")
@@ -73,7 +84,8 @@ class Server:
         while not self.connected:
             try:
                 self.data, self.client = self.socket.recvfrom(1024)
-                if self.data.decode() == "init":
+                parts = self.data.hex(" ").split()
+                if parts[0] == Flag.CONNECT.value.to_bytes(1).hex():
                     self.sendMessage("ack")
                     self.connected = True
                     self.clientAlive = True

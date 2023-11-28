@@ -17,6 +17,7 @@ class Client:
         self.connected = False
         self.data = None
         self.status = 0
+
     def sending(self):
         while self.connected:
             inp = input(": ")
@@ -38,8 +39,9 @@ class Client:
         with open(f"{filename}", mode="rb") as f:
             data = f.read()
 
-        print(((b"f"+data).hex(" ").upper()))
-        self.socket.sendto(b"f"+data, (self.serverIP, self.serverPort))
+        #print(((b"f"+data).hex(" ").upper()))
+        filename = filename.split("/")[-1]
+        self.socket.sendto(formatHeader(Flag.FILE.value, random.randint(0, 32768), data, filename), (self.serverIP, self.serverPort))
     def listen(self):
         while True:
             try:
@@ -50,16 +52,19 @@ class Client:
 
     def keepAlive(self):
         while self.connected:
-            self.sendMessage("alive")
+            self.socket.sendto("alive".encode(), (self.serverIP, self.serverPort))
             time.sleep(5)
 
 
     # TODO wait for ACK for switch
     def switch(self):
-        self.socket.sendto("switch".encode(), (self.serverIP, self.serverPort))
+        self.socket.sendto(formatHeader(Flag.SWITCH.value), (self.serverIP, self.serverPort))
         self.status = 45
         time.sleep(1.5)
         self.connected = False
+
+    def sendInit(self):
+        self.socket.sendto(formatHeader(Flag.CONNECT.value), (self.serverIP, self.serverPort))
 
     def start(self):
         tListening = threading.Thread(target=self.listen, daemon=True)
@@ -67,7 +72,7 @@ class Client:
 
         while not self.connected:
             try:
-                self.sendMessage("init")
+                self.sendInit()
                 time.sleep(2)
                 if "ack" in self.messageQueue:
                     self.connected = True
