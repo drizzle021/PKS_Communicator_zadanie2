@@ -1,5 +1,5 @@
 class Message:
-    def __init__(self, flag, data=None, seq=None,crc=None):
+    def __init__(self, flag, data=None, seq=None, crc=None):
         self.flag = flag
         if data is not None:
             self.data = data
