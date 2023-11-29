@@ -12,7 +12,6 @@ from tkinter.messagebox import showerror
 from tkinter import filedialog as fd
 import re
 
-
 """class GUI(tk.Tk):
     def __init__(self, ip, port,mode=""):
         super().__init__()
@@ -218,6 +217,7 @@ elif mode == 0:
 t2 = threading.Thread(target=lambda: start(ip,port,mode))
 t2.start()
 """
+
 print("PKS - COMMUNICATOR")
 mode = ""
 user = None
@@ -244,5 +244,13 @@ while True:
         user = Server("localhost" if LOCALHOST else input(), 9000 if LOCALHOST else input())
 
     elif status == 45 and mode == "1":
-        user = Client(("localhost", 9000) if LOCALHOST else (input("IP: "), input("PORT: ")))
+        address = user.client
+        user = Client((address[0], 9000) if LOCALHOST else (input("IP: "), input("PORT: ")))
 
+    elif status == 1:
+        print("Exiting...")
+        sys.exit(0)
+
+    elif status == 2:
+        print("Client Timed-out, Exiting...")
+        sys.exit(0)
