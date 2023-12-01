@@ -47,7 +47,7 @@ class Client:
         self.socket = s.socket(s.AF_INET, s.SOCK_DGRAM)
         port = random.randint(5000, 8000)
         try:
-            self.socket.bind(("localhost", port))
+            self.socket.bind(("0.0.0.0", port))
         except s.error:
             self.socket.bind((input("IP: "),int(input("PORT: "))))
 

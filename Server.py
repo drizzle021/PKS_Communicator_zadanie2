@@ -30,12 +30,13 @@ def analyseMessage(message):
 
 
 class Server:
-    def __init__(self, ip, port):
+    def __init__(self, address=("0.0.0.0",9000)):
         print("Entering Receiver mode")
         self.socket = s.socket(s.AF_INET, s.SOCK_DGRAM)
         self.socket.setsockopt(s.SOL_SOCKET,s.SO_REUSEADDR,1)
         # self.socket.bind((ip,port))
-        self.socket.bind((ip, port))
+        #self.socket.bind(address)
+        self.socket.bind(("0.0.0.0",9000))
         self.connected = False
         self.data = None
         self.client = None
@@ -160,6 +161,8 @@ class Server:
 
     def start(self):
         #TODO time out after 40 secs if no connection established
+
+
         try:
             while not self.connected:
                 try:
@@ -173,11 +176,11 @@ class Server:
                 except Exception as e:
                     print(e)
 
-            tCheckAlive = threading.Thread(target=self.checkAlive, daemon=True)
-            tCheckAlive.start()
-
             tListening = threading.Thread(target=self.listen, daemon=True)
             tListening.start()
+
+            tCheckAlive = threading.Thread(target=self.checkAlive, daemon=True)
+            tCheckAlive.start()
 
             while self.connected:
                 pass
@@ -185,6 +188,7 @@ class Server:
             print(e)
             self.quit(1)
 
+        print("skjdsaj")
         return self.status
 
     def quit(self, status):
