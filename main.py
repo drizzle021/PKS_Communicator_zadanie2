@@ -234,6 +234,7 @@ while mode != "0" and mode != "1":
 
     elif mode == "1":
 
+        #user = Server("localhost" if LOCALHOST else input(), 9000 if LOCALHOST else input())
         user = Server()
 
     elif mode == "-1":
@@ -249,7 +250,6 @@ while True:
 
     elif status == 45 and mode == "1":
         address = user.client
-        #user = Client((address[0], 9000) if LOCALHOST else (input("IP: "), input("PORT: ")))
         user = Client((address[0], 9000))
         mode = "0"
         #user.sendReady(address)

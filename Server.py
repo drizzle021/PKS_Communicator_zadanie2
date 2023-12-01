@@ -4,6 +4,7 @@ import time
 from HeaderFormat import formatHeader, Flag
 from Message import Message
 from crc import Calculator, Crc16
+from pynput import keyboard
 
 
 def analyseMessage(message):
@@ -30,13 +31,12 @@ def analyseMessage(message):
 
 
 class Server:
-    def __init__(self, address=("0.0.0.0",9000)):
+    def __init__(self, ip="0.0.0.0", port=9000):
         print("Entering Receiver mode")
         self.socket = s.socket(s.AF_INET, s.SOCK_DGRAM)
         self.socket.setsockopt(s.SOL_SOCKET,s.SO_REUSEADDR,1)
         # self.socket.bind((ip,port))
-        #self.socket.bind(address)
-        self.socket.bind(("0.0.0.0",9000))
+        self.socket.bind((ip, port))
         self.connected = False
         self.data = None
         self.client = None
@@ -50,6 +50,33 @@ class Server:
         self.messageQueue = []
 
         self.status = 0
+
+
+    def keyListener(self):
+        COMBINATIONS = [{keyboard.Key.shift, keyboard.KeyCode(char="s")},
+                        {keyboard.Key.shift, keyboard.KeyCode(char="S")}]
+
+        def on_press(key):
+            if any([key in COMBO for COMBO in COMBINATIONS]):
+                current.add(key)
+                if any(all(k in current for k in COMBO) for COMBO in COMBINATIONS):
+                    execute()
+
+        def on_release(key):
+            try:
+                if any([key in COMBO for COMBO in COMBINATIONS]):
+                    current.remove(key)
+            except KeyError:
+                pass
+
+        def execute():
+            print("sdasdsa")
+            self.requestSwitch()
+
+        current = set()
+        with keyboard.Listener(on_press=on_press, on_release=on_release) as listener:
+            listener.join()
+
 
     def listen(self):
         while self.connected:
@@ -149,6 +176,11 @@ class Server:
                 # print("<INFO> ALIVE SKIP")
                 timeout -= 5
             time.sleep(5)
+    def requestSwitch(self):
+        if not self.isReceivingMessageFragments:
+            self.socket.sendto(formatHeader([Flag.SWITCH.value]), self.client)
+        else:
+            print("currently receiving data, try again later")
 
     def switch(self):
         print("Sender ending messages. Requesting switch....")
@@ -161,8 +193,6 @@ class Server:
 
     def start(self):
         #TODO time out after 40 secs if no connection established
-
-
         try:
             while not self.connected:
                 try:
@@ -176,19 +206,22 @@ class Server:
                 except Exception as e:
                     print(e)
 
-            tListening = threading.Thread(target=self.listen, daemon=True)
-            tListening.start()
-
             tCheckAlive = threading.Thread(target=self.checkAlive, daemon=True)
             tCheckAlive.start()
 
+            tListening = threading.Thread(target=self.listen, daemon=True)
+            tListening.start()
+
+            tKeyListener = threading.Thread(target=self.keyListener, daemon=True)
+            tKeyListener.start()
+
             while self.connected:
                 pass
+
         except s.error as e:
             print(e)
             self.quit(1)
 
-        print("skjdsaj")
         return self.status
 
     def quit(self, status):

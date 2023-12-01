@@ -49,6 +49,7 @@ class Client:
         try:
             self.socket.bind(("0.0.0.0", port))
         except s.error:
+            print("AAAAAAAAAAAAAA")
             self.socket.bind((input("IP: "),int(input("PORT: "))))
 
         self.serverIP, self.serverPort = server
@@ -95,7 +96,7 @@ class Client:
             elif inp.strip() == "/help" or inp.strip() == "/h":
                 printHelp()
             elif inp.strip() == "/switch" or inp.strip() == "/s":
-                self.switch()
+                self.requestSwitch()
 
             elif inp.strip() == "/quit" or inp.strip() == "/q":
                 self.quit()
@@ -136,7 +137,7 @@ class Client:
                            k,
                            self.calculator.checksum((fragment+("aa" if k == len(fragments)-1 and error else "")).encode())) for k,fragment in enumerate(fragments)]
         for packet in packets:
-            self.socket.sendto(formatHeader(packet.flag, packet.seq, packet.data,crc=packet.crc),(self.serverIP, self.serverPort))
+            self.socket.sendto(formatHeader(packet.flag, packet.seq, packet.data, crc=packet.crc), (self.serverIP, self.serverPort))
         #print(packets)
         print(fragments)
 
@@ -177,6 +178,10 @@ class Client:
                 elif message.flag == Flag.NACK.value.to_bytes(1, byteorder="big").hex():
                     msg = self.messageQueue[self.getIndex(message.seq)]
                     self.sendMessage(msg.data, msg.seq)
+
+                elif message.flag == Flag.SWITCH.value.to_bytes(1, byteorder="big").hex():
+                    self.messageQueue.append(message)
+                    self.requestSwitch()
                 else:
                     self.messageQueue.append(message)
             except Exception as e:
@@ -187,23 +192,28 @@ class Client:
             self.socket.sendto(formatHeader([Flag.K_ALIVE.value]), (self.serverIP, self.serverPort))
             time.sleep(5)
 
-    def switch(self):
+    def requestSwitch(self):
         self.socket.sendto(formatHeader([Flag.SWITCH.value]), (self.serverIP, self.serverPort))
         timeout = 5
         while timeout > 0 and self.connected:
+            #print(len(self.lookup(Flag.SWITCH.value)) > 0)
             if len(self.lookup(Flag.SWITCH.value)) > 0:
                 print("Received acknowledgement from Receiver to switch...")
-                self.messageQueue = [message for message in self.messageQueue if
-                                     message.flag != Flag.SWITCH.value.to_bytes(1, byteorder="big").hex()]
+                self.messageQueue = [message for message in self.messageQueue if message.flag != Flag.SWITCH.value.to_bytes(1, byteorder="big").hex()]
+                self.status = 45
+                time.sleep(2)
+                self.connected = False
                 break
             else:
                 time.sleep(1)
                 timeout -= 1
-        self.status = 45
-        time.sleep(2)
-        self.connected = False
+        else:
+            if self.connected:
+                print("Timed out")
+
 
     def sendInit(self):
+        print(self.serverIP,self.serverPort)
         self.socket.sendto(formatHeader([Flag.CONNECT.value]), (self.serverIP, self.serverPort))
 
     def start(self):
