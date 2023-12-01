@@ -8,3 +8,5 @@ class Message:
         if crc is not None:
             self.crc = crc
 
+        self.acknowledged = False
+

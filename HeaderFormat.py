@@ -9,10 +9,14 @@ class Flag(Enum):
     NACK = 16
     ACK = 32
     SWITCH = 64
-    _ = 0
+    IS_FRAGMENT = 128
 
+# TODO set multiple flags
+def formatHeader(flags, fragment_seq=0, data="", filename="",crc=0):
+    flag = 0
+    for i in flags:
+        flag+=i
 
-def formatHeader(flag, fragment_seq=0, data="", filename="",crc=0):
     if flag == Flag.CONNECT.value:
         return flag.to_bytes(1, byteorder="big")
 
@@ -34,3 +38,7 @@ def formatHeader(flag, fragment_seq=0, data="", filename="",crc=0):
 
     elif flag == Flag.SWITCH.value:
         return flag.to_bytes(1, byteorder="big")
+
+    elif flag == Flag.IS_FRAGMENT.value|Flag.MESSAGE.value:
+        return flag.to_bytes(1, byteorder="big") + bytes(fragment_seq.to_bytes(2, byteorder="big")) + bytes(data, "utf-8") + crc.to_bytes(2, byteorder="big")
+

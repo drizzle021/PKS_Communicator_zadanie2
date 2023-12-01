@@ -218,6 +218,8 @@ t2 = threading.Thread(target=lambda: start(ip,port,mode))
 t2.start()
 """
 
+print(bin(4|128))
+
 print("PKS - COMMUNICATOR")
 mode = ""
 user = None
@@ -242,10 +244,13 @@ while True:
     status = user.start()
     if status == 45 and mode == "0":
         user = Server("localhost" if LOCALHOST else input(), 9000 if LOCALHOST else input())
+        mode = "1"
 
     elif status == 45 and mode == "1":
         address = user.client
         user = Client((address[0], 9000) if LOCALHOST else (input("IP: "), input("PORT: ")))
+        mode = "0"
+        #user.sendReady(address)
 
     elif status == 1:
         print("Exiting...")
