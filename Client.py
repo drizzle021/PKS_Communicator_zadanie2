@@ -1,3 +1,4 @@
+import os
 import random
 import socket as s
 import threading
@@ -52,7 +53,7 @@ class Client:
             self.socket.bind((input("IP: "), int(input("PORT: "))))
 
         self.serverIP, self.serverPort = server
-        self.fragmentSize = 512
+        self.fragmentSize = 1024
         self.messageQueue = []
         self.connected = False
         self.data = None
@@ -98,7 +99,7 @@ class Client:
                 self.requestSwitch()
 
             elif inp.strip() == "/quit" or inp.strip() == "/q":
-                self.quit()
+                self.quit(1)
 
             else:
                 msg = " ".join(parts)
@@ -140,16 +141,55 @@ class Client:
         #print(packets)
         print(fragments)
 
+    def sendFragmentedFile(self, filepath, error=False):
+        fragments = []
+        filename = ""
 
-    def sendFile(self, filename):
         try:
-            with open(f"{filename}", mode="rb") as f:
-                data = f.read()
+            f = open(f"{filepath}", mode="rb")
 
-            # print(((b"f"+data).hex(" ").upper()))
-            filename = filename.split("/")[-1]
-            self.socket.sendto(formatHeader([Flag.FILE.value], 0, data, filename),
-                               (self.serverIP, self.serverPort))
+            byte = f.read(self.fragmentSize)
+
+            while byte:
+                fragments.append(byte)
+                byte = f.read(self.fragmentSize)
+
+            f.close()
+        except FileNotFoundError:
+            print("<ERROR> File not found")
+            print("<ERROR> Check the path and try again")
+
+        filename = filepath.split("/")[-1]
+
+
+        packets = [Message([Flag.FILE.value,Flag.IS_FRAGMENT.value]
+                   if k == 0 else [Flag.FILE.value],
+                   fragment,
+                   k,
+                   self.calculator.checksum(fragment+bytes("aa") if k == len(fragments)-1 and error else fragment)) for k, fragment in enumerate(fragments)]
+        print(len(packets))
+
+        for packet in packets:
+            print(packet.seq)
+            if packet.seq == 0:
+                self.socket.sendto(formatHeader(packet.flag, packet.seq, packet.data, crc=packet.crc, filename=filename), (self.serverIP, self.serverPort))
+            else:
+                self.socket.sendto(formatHeader(packet.flag, packet.seq, packet.data, crc=packet.crc), (self.serverIP, self.serverPort))
+    def sendFile(self, filepath, error=False):
+        try:
+            if os.path.getsize(filepath) < self.fragmentSize:
+
+                with open(f"{filepath}", mode="rb") as f:
+                    data = f.read()
+
+                # print(((b"f"+data).hex(" ").upper()))
+                filename = filepath.split("/")[-1]
+                self.socket.sendto(formatHeader([Flag.FILE.value], 0, data, filename),
+                                   (self.serverIP, self.serverPort))
+
+            else:
+                self.sendFragmentedFile(filepath, error=error)
+
         except FileNotFoundError:
             print("<ERROR> File not found")
             print("<ERROR> Check the path and try again")
@@ -174,6 +214,7 @@ class Client:
                 if message.flag == Flag.ACK.value.to_bytes(1, byteorder="big").hex():
                     message.acknowledged = True
                     self.messageQueue.pop(self.getIndex(message.seq))
+
                 elif message.flag == Flag.NACK.value.to_bytes(1, byteorder="big").hex():
                     msg = self.messageQueue[self.getIndex(message.seq)]
                     self.sendMessage(msg.data, msg.seq)
@@ -188,9 +229,20 @@ class Client:
                 #print(e)
 
     def keepAlive(self):
+        timeout = 40
         while self.connected:
             self.socket.sendto(formatHeader([Flag.K_ALIVE.value]), (self.serverIP, self.serverPort))
+            time.sleep(0.1)
+            if len(self.lookup(Flag.K_ALIVE.value)) > 0:
+                self.messageQueue = [message for message in self.messageQueue if
+                                     message.flag != Flag.K_ALIVE.value.to_bytes(1, byteorder="big").hex()]
+                timeout = 15
+            elif timeout == 0:
+                self.quit(2)
+            else:
+                timeout -= 5
             time.sleep(5)
+
 
     def requestSwitch(self):
         self.socket.sendto(formatHeader([Flag.SWITCH.value]), (self.serverIP, self.serverPort))
@@ -218,7 +270,7 @@ class Client:
     def start(self):
         tListening = threading.Thread(target=self.listen, daemon=True)
         tListening.start()
-
+        timeout = 40
         while not self.connected:
             try:
                 self.sendInit()
@@ -226,10 +278,19 @@ class Client:
                 if len(self.lookup(Flag.CONNECT.value)) > 0:
                     self.connected = True
                     self.messageQueue = []
+
+                elif timeout == 0:
+                    self.status = 3
+                    break
+                else:
+                    timeout -= 1
                 time.sleep(0.5)
 
             except Exception as e:
-                print(e)
+                print("server unreachable")
+                self.status = 1
+                break
+                #print(e)
 
         tKeepAlive = threading.Thread(target=self.keepAlive, daemon=True)
         tKeepAlive.start()
@@ -242,10 +303,6 @@ class Client:
 
         return self.status
 
-    def quit(self):
-        self.status = 1
+    def quit(self, status):
+        self.status = status
         self.connected = False
-
-
-    def sendReady(self, client):
-        self.socket.sendto(formatHeader([Flag.SWITCH.value]), client)
