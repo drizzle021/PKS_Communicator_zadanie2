@@ -34,13 +34,12 @@ class Server:
     def __init__(self, ip="0.0.0.0", port=9000):
         print("Entering Receiver mode")
         self.socket = s.socket(s.AF_INET, s.SOCK_DGRAM)
-        self.socket.setsockopt(s.SOL_SOCKET,s.SO_REUSEADDR,1)
+        self.socket.setsockopt(s.SOL_SOCKET, s.SO_REUSEADDR, 1)
         # self.socket.bind((ip,port))
         self.socket.bind((ip, port))
         self.connected = False
         self.data = None
         self.client = None
-        self.clientAlive = False
         self.calculator = Calculator(Crc16.CCITT, optimized=True)
 
         self.isReceivingMessageFragments = False
@@ -70,7 +69,6 @@ class Server:
                 pass
 
         def execute():
-            print("sdasdsa")
             self.requestSwitch()
 
         current = set()
@@ -120,8 +118,8 @@ class Server:
                         self.lookup(Flag.K_ALIVE.value)) < 1:
                     self.messageQueue.append(message)
             except Exception as e:
-                print(e)
-
+                #print(e)
+                pass
     def receiveFile(self, file, address):
         separatorIndex = file.data.index("00")
         filename = file.data[:separatorIndex]
@@ -141,7 +139,7 @@ class Server:
         print(message)
         verification = self.calculator.verify(bytes.fromhex(' '.join(message.data)), message.crc)
 
-        if hasattr(message,"acknowledged") and verification:
+        if hasattr(message, "acknowledged") and verification:
             message.acknowledged = True
 
 
@@ -177,10 +175,13 @@ class Server:
                 timeout -= 5
             time.sleep(5)
     def requestSwitch(self):
-        if not self.isReceivingMessageFragments:
-            self.socket.sendto(formatHeader([Flag.SWITCH.value]), self.client)
-        else:
-            print("currently receiving data, try again later")
+        try:
+            if not self.isReceivingMessageFragments:
+                self.socket.sendto(formatHeader([Flag.SWITCH.value]), self.client)
+            else:
+                print("currently receiving data, try again later")
+        except s.error:
+            print("Try again :'( UwU")
 
     def switch(self):
         print("Sender ending messages. Requesting switch....")
@@ -201,10 +202,10 @@ class Server:
                     if parts[0] == Flag.CONNECT.value.to_bytes(1, byteorder="big").hex():
                         self.socket.sendto(formatHeader([Flag.CONNECT.value]), self.client)
                         self.connected = True
-                        self.clientAlive = True
                         self.status = 1
                 except Exception as e:
-                    print(e)
+                    pass
+                    #print(e)
 
             tCheckAlive = threading.Thread(target=self.checkAlive, daemon=True)
             tCheckAlive.start()
@@ -219,7 +220,7 @@ class Server:
                 pass
 
         except s.error as e:
-            print(e)
+            #print(e)
             self.quit(1)
 
         return self.status

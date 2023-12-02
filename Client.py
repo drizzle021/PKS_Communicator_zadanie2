@@ -49,8 +49,7 @@ class Client:
         try:
             self.socket.bind(("0.0.0.0", port))
         except s.error:
-            print("AAAAAAAAAAAAAA")
-            self.socket.bind((input("IP: "),int(input("PORT: "))))
+            self.socket.bind((input("IP: "), int(input("PORT: "))))
 
         self.serverIP, self.serverPort = server
         self.fragmentSize = 512
@@ -112,7 +111,7 @@ class Client:
         return [message for message in self.messageQueue if message.flag == flag.to_bytes(1, byteorder="big").hex()]
 
     def getIndex(self, seq):
-        msg = [message for message in self.messageQueue if hasattr(message,"seq") and message.seq == seq]
+        msg = [message for message in self.messageQueue if hasattr(message, "seq") and message.seq == seq]
         return self.messageQueue.index(msg[0])
 
     def sendMessage(self, message, seq=0):
@@ -185,7 +184,8 @@ class Client:
                 else:
                     self.messageQueue.append(message)
             except Exception as e:
-                print(e)
+                pass
+                #print(e)
 
     def keepAlive(self):
         while self.connected:
@@ -213,7 +213,6 @@ class Client:
 
 
     def sendInit(self):
-        print(self.serverIP,self.serverPort)
         self.socket.sendto(formatHeader([Flag.CONNECT.value]), (self.serverIP, self.serverPort))
 
     def start(self):
@@ -223,10 +222,11 @@ class Client:
         while not self.connected:
             try:
                 self.sendInit()
-                time.sleep(2)
+                time.sleep(0.5)
                 if len(self.lookup(Flag.CONNECT.value)) > 0:
                     self.connected = True
                     self.messageQueue = []
+                time.sleep(0.5)
 
             except Exception as e:
                 print(e)
