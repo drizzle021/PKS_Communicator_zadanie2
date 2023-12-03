@@ -53,6 +53,9 @@ class Server:
         self.isReceivingMessageFragments = False
         self.dataFragments = []
         self.fragmentSize = 512
+        self.missing = float("inf")
+        self.gotLastFrag = False
+        self.requesting = False
 
         self.messageQueue = []
 
@@ -65,13 +68,13 @@ class Server:
                 self.data, address = self.socket.recvfrom(2000)
 
                 message = analyseMessage(self.data)
-
+                #print(message.flag)
                 if self.isReceivingMessageFragments and message.flag == Flag.MESSAGE.value.to_bytes(1,
                                                                                                     byteorder="big").hex():
                     self.receiveFragmentedMessage(message)
                     continue
-                if self.isReceivingMessageFragments and message.flag == Flag.FILE.value.to_bytes(1,
-                                                                                                   byteorder="big").hex():
+                if self.isReceivingMessageFragments and message.flag == Flag.FILE.value.to_bytes(1,byteorder="big").hex():
+                    #print("CASCACAS")
                     self.receiveFragmentedFile(message)
                     continue
 
@@ -102,6 +105,7 @@ class Server:
                     self.receiveFragmentedMessage(message)
 
                 elif message.flag == (Flag.FILE.value | Flag.IS_FRAGMENT.value).to_bytes(1, byteorder="big").hex():
+                    self.missing = float("inf")
                     print(f"Receiving file fragments with fragment size {self.fragmentSize}")
                     self.isReceivingMessageFragments = True
 
@@ -122,83 +126,138 @@ class Server:
                     self.messageQueue.append(message)
 
             except Exception as e:
-                print(e)
+                #print(e)
                 pass
 
     def receiveFile(self, file, address):
-        separatorIndex = file.data.index("00")
-        filename = file.data[:separatorIndex]
-        filename = bytes.fromhex(" ".join(filename))
+        try:
+            separatorIndex = file.data.index("00")
 
-        filename = filename.decode()
-        file = file.data[separatorIndex + 1:]
-        file = bytes.fromhex(" ".join(file))
+            filename = file.data[:separatorIndex]
+            filename = bytes.fromhex(" ".join(filename))
 
-        print(f"{address}\nFile Received: {filename}")
-        self.saveFile(filename, file)
+            filename = filename.decode()
 
-        # self.messageQueue.remove(file)
+            if os.path.splitext(filename)[1] == "":
+                return
+
+
+            file = file.data[separatorIndex + 1:]
+            file = bytes.fromhex(" ".join(file))
+
+            print(f"{address}\nFile Received: {filename}")
+            self.saveFile(filename, file)
+
+            # self.messageQueue.remove(file)
+        except UnicodeError:
+            return
+        except ValueError:
+            return
+
 
     def receiveFragmentedFile(self, message):
         verification = self.calculator.verify(bytes.fromhex(' '.join(message.data)), message.crc)
 
         if hasattr(message, "acknowledged") and verification:
             message.acknowledged = True
+            self.socket.sendto(formatHeader([Flag.ACK.value], message.seq), self.client)
+            print(f"{message.seq} - acknowledged")
+            self.dataFragments.append(message)
 
-        self.dataFragments.append(message)
 
-        print(len(bytes.fromhex(' '.join(message.data))))
+        #print(bytes.fromhex(' '.join(message.data)))
 
-        if len(bytes.fromhex(' '.join(message.data))) < self.fragmentSize:
-            #print([fragment.acknowledged for fragment in self.dataFragments])
-            print(all([fragment.acknowledged for fragment in self.dataFragments]))
-            self.isReceivingMessageFragments = False
+        if len(bytes.fromhex(' '.join(message.data))) < self.fragmentSize or self.gotLastFrag:
+            self.dataFragments = sorted(self.dataFragments, key=lambda x: x.seq)
+            self.gotLastFrag = True
+            if len(missing := self.checkSequenceNumbers()) > 0:
+                if not self.requesting:
+                    self.missing = missing
 
-            self.saveFile(self.filename, self.dataFragments, fragmented=True)
-            self.dataFragments = []
+                    tRequestMissing = threading.Thread(target=lambda: self.requestMissing(missing))
+                    tRequestMissing.start()
+
+            else:
+                #print(len(self.dataFragments))
+                #print([fragment.acknowledged for fragment in self.dataFragments])
+                #print(all([fragment.acknowledged for fragment in self.dataFragments]))
+                self.dataFragments= self.handleDups(self.dataFragments)
+                print(len(self.dataFragments))
+                self.isReceivingMessageFragments = False
+                self.gotLastFrag = False
+
+                self.saveFile(self.filename, self.dataFragments, fragmented=True)
+                self.dataFragments = []
+
+    def requestMissing(self, missing):
+        self.requesting = True
+        #print(missing)
+        for seq in missing:
+            #print(f"{seq} - missing, sent NACK")
+            self.socket.sendto(formatHeader([Flag.NACK.value], seq), self.client)
+        self.requesting = False
+
+    def handleDups(self, fragments):
+        s = []
+        newfragments = []
+
+        for fragment in fragments:
+            if fragment.seq not in s:
+                s.append(fragment.seq)
+                newfragments.append(fragment)
+
+        newfragments = sorted(newfragments, key=lambda x: x.seq)
+
+        return newfragments
+
+
 
 
     def saveFile(self, filename, file, fragmented=False):
-        if not fragmented:
-            if os.path.isdir(self.savePath):
-                try:
-                    with open(f"{self.savePath}/{filename}", mode="wb") as f:
-                        f.write(file)
-                        print(f"File saved at {self.savePath}")
-                except PermissionError:
-                    print("Permission denied or path wasnt set :(")
+        try:
+            if not fragmented:
+                if os.path.isdir(self.savePath):
+                    try:
+                        with open(f"{self.savePath}/{filename}", mode="wb") as f:
+                            f.write(file)
+                            print(f"File saved at {self.savePath}")
+                    except PermissionError:
+                        print("Permission denied or path wasnt set :(")
+                        with open(f"{os.path.dirname(os.path.abspath(__file__))}/{filename}", mode="wb") as f:
+                            f.write(file)
+                            print(f"File saved at {os.path.dirname(os.path.abspath(__file__))}")
+
+                else:
+                    print("Invalid save path.. saving at default directory..")
                     with open(f"{os.path.dirname(os.path.abspath(__file__))}/{filename}", mode="wb") as f:
                         f.write(file)
                         print(f"File saved at {os.path.dirname(os.path.abspath(__file__))}")
-
             else:
-                print("Invalid save path.. saving at default directory..")
-                with open(f"{os.path.dirname(os.path.abspath(__file__))}/{filename}", mode="wb") as f:
-                    f.write(file)
-                    print(f"File saved at {os.path.dirname(os.path.abspath(__file__))}")
-        else:
-            if os.path.isdir(self.savePath):
-                try:
-                    with open(f"{self.savePath}/{filename}", mode="wb") as f:
-                        for fragment in file:
-                            f.write(bytes.fromhex(' '.join(fragment.data)))
-                        print(f"File saved at {self.savePath}")
-                except PermissionError:
-                    print("Permission denied or path wasnt set :(")
+                if os.path.isdir(self.savePath):
+                    try:
+                        with open(f"{self.savePath}/{filename}", mode="wb") as f:
+                            for fragment in file:
+                                f.write(bytes.fromhex(' '.join(fragment.data)))
+                            print(f"File saved at {self.savePath}")
+                    except PermissionError:
+                        print("Permission denied or path wasnt set :(")
+                        with open(f"{os.path.dirname(os.path.abspath(__file__))}/{filename}", mode="wb") as f:
+                            for fragment in file:
+                                f.write(bytes.fromhex(' '.join(fragment.data)))
+                            print(f"File saved at {os.path.dirname(os.path.abspath(__file__))}")
+
+                else:
+                    print("Invalid save path.. saving at default directory..")
                     with open(f"{os.path.dirname(os.path.abspath(__file__))}/{filename}", mode="wb") as f:
                         for fragment in file:
                             f.write(bytes.fromhex(' '.join(fragment.data)))
                         print(f"File saved at {os.path.dirname(os.path.abspath(__file__))}")
+        except UnicodeError as e:
+            return
 
-            else:
-                print("Invalid save path.. saving at default directory..")
-                with open(f"{os.path.dirname(os.path.abspath(__file__))}/{filename}", mode="wb") as f:
-                    for fragment in file:
-                        f.write(bytes.fromhex(' '.join(fragment.data)))
-                    print(f"File saved at {os.path.dirname(os.path.abspath(__file__))}")
 
     def receiveFragmentedMessage(self, message):
-        print(message)
+        #print(message)
         verification = self.calculator.verify(bytes.fromhex(' '.join(message.data)), message.crc)
 
         if hasattr(message, "acknowledged") and verification:
@@ -300,3 +359,9 @@ class Server:
     def quit(self, status):
         self.status = status
         self.connected = False
+
+    def checkSequenceNumbers(self):
+        seqs = {fragment.seq for fragment in self.dataFragments}
+        missing = {n for n in range(max(seqs)+1)}.difference(seqs)
+
+        return missing

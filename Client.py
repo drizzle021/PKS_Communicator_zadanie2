@@ -131,6 +131,7 @@ class Client:
 
         fragments.append(message[index:])
 
+
         packets = [Message([Flag.MESSAGE.value,Flag.IS_FRAGMENT.value]
                            if k == 0 else [Flag.MESSAGE.value],
                            fragment,
@@ -170,11 +171,13 @@ class Client:
         print(len(packets))
 
         for packet in packets:
-            print(packet.seq)
+            #print(packet.seq)
             if packet.seq == 0:
                 self.socket.sendto(formatHeader(packet.flag, packet.seq, packet.data, crc=packet.crc, filename=filename), (self.serverIP, self.serverPort))
             else:
                 self.socket.sendto(formatHeader(packet.flag, packet.seq, packet.data, crc=packet.crc), (self.serverIP, self.serverPort))
+
+            self.messageQueue.append(packet)
     def sendFile(self, filepath, error=False):
         try:
             if os.path.getsize(filepath) < self.fragmentSize:
@@ -198,26 +201,34 @@ class Client:
         expected = self.calculator.checksum(message.encode())
         # print(expected)
         seq = 0  # random.randint(0, 32768)
-        self.messageQueue.append(Message(Flag.MESSAGE.value, message, seq, expected))
+        self.messageQueue.append(Message([Flag.MESSAGE.value], message, seq, expected))
         message += "hehe"
-        self.socket.sendto(formatHeader(Flag.MESSAGE.value, seq, message, crc=expected),
+        self.socket.sendto(formatHeader([Flag.MESSAGE.value], seq, message, crc=expected),
                            (self.serverIP, self.serverPort))
 
     def faultyFileSend(self):
         print("send file with error")
 
+
+    # TODO: if receives IS_FRAGMENT flag from server, stop retransmissions
     def listen(self):
         while True:
             try:
                 self.data, address = self.socket.recvfrom(1024)
                 message = analyseMessage(self.data)
                 if message.flag == Flag.ACK.value.to_bytes(1, byteorder="big").hex():
-                    message.acknowledged = True
                     self.messageQueue.pop(self.getIndex(message.seq))
 
                 elif message.flag == Flag.NACK.value.to_bytes(1, byteorder="big").hex():
                     msg = self.messageQueue[self.getIndex(message.seq)]
-                    self.sendMessage(msg.data, msg.seq)
+                    #print(msg.flag[0], int(Flag.FILE.value.to_bytes(1, byteorder="big").hex(),16))
+                    if msg.flag[0] == int(Flag.MESSAGE.value.to_bytes(1, byteorder="big").hex(),16):
+                        self.sendMessage(msg.data, msg.seq)
+                    elif msg.flag[0] == int(Flag.FILE.value.to_bytes(1, byteorder="big").hex(),16):
+                        #print("resending file")
+                        #print(msg.flag, msg.seq, msg.data, msg.crc)
+                        self.socket.sendto(formatHeader([Flag.FILE.value], fragment_seq=msg.seq, data=msg.data, crc=msg.crc),
+                                           (self.serverIP, self.serverPort))
 
                 elif message.flag == Flag.SWITCH.value.to_bytes(1, byteorder="big").hex():
                     self.messageQueue.append(message)
