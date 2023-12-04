@@ -1,3 +1,4 @@
+import copy
 import os
 import random
 import socket as s
@@ -45,6 +46,7 @@ class Client:
     def __init__(self, server: tuple):
         print("Entering Sender mode")
         print("Type /help or /h for help")
+        print("Press Enter to start")
         self.socket = s.socket(s.AF_INET, s.SOCK_DGRAM)
         port = random.randint(5000, 8000)
         try:
@@ -69,7 +71,7 @@ class Client:
             parts = [part for part in parts if part.strip()!= ""]
 
             if len(parts) > 2 and ((parts[-2] in ("-file", "-f") and parts[-1] in ("-e", "-error")) or (parts[-1] in ("-file", "-f") and parts[-2] in ("-e", "-error"))):
-                self.faultyFileSend()
+                self.sendFile(" ".join(parts[:-2]),error=True)
 
             elif parts[-1] == "-file" or parts[-1] == "-f":
                 # print(" ".join(parts[:-1]))
@@ -88,6 +90,12 @@ class Client:
                 else:
                     try:
                         self.fragmentSize = int(parts[1])
+                        if self.fragmentSize < 64:
+                            self.fragmentSize = 64
+                            print(f"Entered fragment size smaller than minimum")
+                        elif self.fragmentSize > 1467:
+                            self.fragmentSize = 1467
+                            print(f"Entered fragment size larger than maximum")
                         print(f"fragment size changed to {self.fragmentSize}")
 
                     except ValueError:
@@ -131,16 +139,17 @@ class Client:
 
         fragments.append(message[index:])
 
-
-        packets = [Message([Flag.MESSAGE.value,Flag.IS_FRAGMENT.value]
-                           if k == 0 else [Flag.MESSAGE.value],
+        packets = [Message([Flag.MESSAGE.value,Flag.IS_FRAGMENT.value] if k == 0 else [Flag.MESSAGE.value],
                            fragment,
                            k,
-                           self.calculator.checksum((fragment+("aa" if k == len(fragments)-1 and error else "")).encode())) for k,fragment in enumerate(fragments)]
+                           self.calculator.checksum(fragment.encode())) for k,fragment in enumerate(fragments)]
         for packet in packets:
+            self.messageQueue.append(copy.copy(packet))
+            if packet.seq == 1 and error:
+                packet.data += "aa"
             self.socket.sendto(formatHeader(packet.flag, packet.seq, packet.data, crc=packet.crc), (self.serverIP, self.serverPort))
+            time.sleep(0.05)
         #print(packets)
-        print(fragments)
 
     def sendFragmentedFile(self, filepath, error=False):
         fragments = []
@@ -167,17 +176,22 @@ class Client:
                    if k == 0 else [Flag.FILE.value],
                    fragment,
                    k,
-                   self.calculator.checksum(fragment+bytes("aa") if k == len(fragments)-1 and error else fragment)) for k, fragment in enumerate(fragments)]
+                   self.calculator.checksum(fragment)) for k, fragment in enumerate(fragments)]
+
         print(len(packets))
 
         for packet in packets:
             #print(packet.seq)
+            self.messageQueue.append(copy.copy(packet))
+            if packet.seq == 1 and error:
+                packet.data += "aa".encode()
+
             if packet.seq == 0:
                 self.socket.sendto(formatHeader(packet.flag, packet.seq, packet.data, crc=packet.crc, filename=filename), (self.serverIP, self.serverPort))
             else:
                 self.socket.sendto(formatHeader(packet.flag, packet.seq, packet.data, crc=packet.crc), (self.serverIP, self.serverPort))
 
-            self.messageQueue.append(packet)
+            time.sleep(0.05)
     def sendFile(self, filepath, error=False):
         try:
             if os.path.getsize(filepath) < self.fragmentSize:
@@ -187,7 +201,8 @@ class Client:
 
                 # print(((b"f"+data).hex(" ").upper()))
                 filename = filepath.split("/")[-1]
-                self.socket.sendto(formatHeader([Flag.FILE.value], 0, data, filename),
+                self.messageQueue.append(Message([Flag.FILE.value], data=data, seq=0, filename=filename, crc=self.calculator.checksum(data)))
+                self.socket.sendto(formatHeader([Flag.FILE.value], 0, data+("aa".encode()) if error else "".encode(), filename),
                                    (self.serverIP, self.serverPort))
 
             else:
@@ -206,11 +221,6 @@ class Client:
         self.socket.sendto(formatHeader([Flag.MESSAGE.value], seq, message, crc=expected),
                            (self.serverIP, self.serverPort))
 
-    def faultyFileSend(self):
-        print("send file with error")
-
-
-    # TODO: if receives IS_FRAGMENT flag from server, stop retransmissions
     def listen(self):
         while True:
             try:
@@ -223,12 +233,23 @@ class Client:
                     msg = self.messageQueue[self.getIndex(message.seq)]
                     #print(msg.flag[0], int(Flag.FILE.value.to_bytes(1, byteorder="big").hex(),16))
                     if msg.flag[0] == int(Flag.MESSAGE.value.to_bytes(1, byteorder="big").hex(),16):
-                        self.sendMessage(msg.data, msg.seq)
+                        print(f"resending fragment {msg.seq}")
+                        self.socket.sendto(
+                            formatHeader([Flag.MESSAGE.value], fragment_seq=msg.seq, data=msg.data, crc=msg.crc),
+                            (self.serverIP, self.serverPort))
                     elif msg.flag[0] == int(Flag.FILE.value.to_bytes(1, byteorder="big").hex(),16):
                         #print("resending file")
                         #print(msg.flag, msg.seq, msg.data, msg.crc)
-                        self.socket.sendto(formatHeader([Flag.FILE.value], fragment_seq=msg.seq, data=msg.data, crc=msg.crc),
-                                           (self.serverIP, self.serverPort))
+                        if msg.filename is None:
+                            time.sleep(0.5)
+                            print(f"resending fragment {msg.seq}")
+                            self.socket.sendto(formatHeader([Flag.FILE.value], fragment_seq=msg.seq, data=msg.data, crc=msg.crc),
+                                               (self.serverIP, self.serverPort))
+                        else:
+                            time.sleep(0.5)
+                            print(f"resending fragment {msg.seq}")
+                            self.socket.sendto(formatHeader([Flag.FILE.value], fragment_seq=msg.seq, data=msg.data, filename=msg.filename, crc=msg.crc),
+                                (self.serverIP, self.serverPort))
 
                 elif message.flag == Flag.SWITCH.value.to_bytes(1, byteorder="big").hex():
                     self.messageQueue.append(message)

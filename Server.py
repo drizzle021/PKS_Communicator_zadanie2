@@ -78,17 +78,15 @@ class Server:
                     self.receiveFragmentedFile(message)
                     continue
 
-                # TODO if verified send ACK and output else send NACK
                 if message.flag == Flag.MESSAGE.value.to_bytes(1, byteorder="big").hex():
                     verification = self.calculator.verify(bytes.fromhex(' '.join(message.data)), message.crc)
                     # print(verification)
                     # print()
                     if verification:
                         self.socket.sendto(formatHeader([Flag.ACK.value], message.seq), self.client)
-                        print(f"{address}: {bytes.fromhex(' '.join(message.data)).decode()}")
+                        print(f"{address}: {bytes.fromhex(' '.join(message.data)).decode()}\t [acknowledged]")
 
                     else:
-                        print("faulty message")
                         self.socket.sendto(formatHeader([Flag.NACK.value], message.seq), self.client)
 
                 elif message.flag == Flag.SWITCH.value.to_bytes(1, byteorder="big").hex():
@@ -141,12 +139,15 @@ class Server:
             if os.path.splitext(filename)[1] == "":
                 return
 
+            verification = self.calculator.verify(bytes.fromhex(" ".join(file.data[separatorIndex + 1:])), file.crc)
 
-            file = file.data[separatorIndex + 1:]
-            file = bytes.fromhex(" ".join(file))
-
-            print(f"{address}\nFile Received: {filename}")
-            self.saveFile(filename, file)
+            if verification:
+                file = file.data[separatorIndex + 1:]
+                file = bytes.fromhex(" ".join(file))
+                print(f"{address}\nFile Received: {filename}")
+                self.saveFile(filename, file)
+            else:
+                self.socket.sendto(formatHeader([Flag.NACK.value], file.seq), self.client)
 
             # self.messageQueue.remove(file)
         except UnicodeError:
@@ -166,6 +167,7 @@ class Server:
 
 
         #print(bytes.fromhex(' '.join(message.data)))
+
 
         if len(bytes.fromhex(' '.join(message.data))) < self.fragmentSize or self.gotLastFrag:
             self.dataFragments = sorted(self.dataFragments, key=lambda x: x.seq)
@@ -195,6 +197,8 @@ class Server:
         for seq in missing:
             #print(f"{seq} - missing, sent NACK")
             self.socket.sendto(formatHeader([Flag.NACK.value], seq), self.client)
+            time.sleep(0.05)
+        time.sleep(0.5)
         self.requesting = False
 
     def handleDups(self, fragments):
@@ -209,9 +213,6 @@ class Server:
         newfragments = sorted(newfragments, key=lambda x: x.seq)
 
         return newfragments
-
-
-
 
     def saveFile(self, filename, file, fragmented=False):
         try:
@@ -262,20 +263,34 @@ class Server:
 
         if hasattr(message, "acknowledged") and verification:
             message.acknowledged = True
+            print(f"{message.seq} - acknowledged")
+            self.dataFragments.append(message)
 
-        self.dataFragments.append(message)
+        if len(bytes.fromhex(' '.join(message.data))) < self.fragmentSize or self.gotLastFrag:
+            self.dataFragments = sorted(self.dataFragments, key=lambda x: x.seq)
+            self.gotLastFrag = True
+            if len(missing := self.checkSequenceNumbers()) > 0:
+                if not self.requesting:
+                    self.missing = missing
 
-        if len(bytes.fromhex(' '.join(message.data)).decode()) < self.fragmentSize:
-            print([fragment.acknowledged for fragment in self.dataFragments])
-            print(all([fragment.acknowledged for fragment in self.dataFragments]))
-            self.isReceivingMessageFragments = False
-            self.dataFragments = [bytes.fromhex(' '.join(fragment.data)).decode() for fragment in self.dataFragments]
+                    tRequestMissing = threading.Thread(target=lambda: self.requestMissing(missing))
+                    tRequestMissing.start()
 
-            print("".join(self.dataFragments))
-            self.dataFragments = []
+            else:
+                self.dataFragments = self.handleDups(self.dataFragments)
+                print(len(self.dataFragments))
+                self.isReceivingMessageFragments = False
+                self.gotLastFrag = False
+
+
+                msg = ""
+                for m in self.dataFragments:
+                    msg += bytes.fromhex(' '.join(m.data)).decode()
+                print(msg)
+                self.dataFragments = []
 
     def checkAlive(self):
-        timeout = 15
+        timeout = 40
         while self.connected:
             # print(self.messageQueue)
             # print(len(self.lookup(Flag.K_ALIVE.value)))

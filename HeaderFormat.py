@@ -11,7 +11,6 @@ class Flag(Enum):
     SWITCH = 64
     IS_FRAGMENT = 128
 
-# TODO set multiple flags
 def formatHeader(flags, fragment_seq=0, data="", filename="",crc=0):
     flag = 0
     for i in flags:

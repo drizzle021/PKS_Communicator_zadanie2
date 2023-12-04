@@ -4,8 +4,6 @@ from Client import Client
 import sys
 
 
-print(bin(2|128))
-
 print("PKS - COMMUNICATOR")
 mode = ""
 user = None
